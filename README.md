@@ -1,11 +1,19 @@
+<center>
+<img alt="bca logo" src="https://lh5.googleusercontent.com/b71zMOQnUd3d3GgJFhNX_FObcOhal-7k_6WvsdwR43bnvLFzSzsaL_lZvC8Uj2YJpW_8VXngvjLCQ8yXjRMq=w1920-h927-rw" width="200px">
+</center>
+
+# BCA CTF Web
+
+## What is BCA CTF?
+[BCA CTF](https://github.com/BCA-CTF/) is the first middle school-focused, high school-run CTF competition.
+
+This is our web app repository.
+
 ![](https://github.com/CTFd/CTFd/blob/master/CTFd/themes/core/static/img/logo.png?raw=true)
 ====
 
 [![Build Status](https://travis-ci.org/CTFd/CTFd.svg?branch=master)](https://travis-ci.org/CTFd/CTFd)
 [![CTFd Slack](https://slack.ctfd.io/badge.svg)](https://slack.ctfd.io/)
-
-## What is BCA CTF?
-BCA CTF is the first middle school-focused, high school-made CTF run out of the Bergen County Academies.
 
 ## What is CTFd?
 CTFd is a Capture The Flag framework focusing on ease of use and customizability. It comes with everything you need to run a CTF and it's easy to customize with plugins and themes.
