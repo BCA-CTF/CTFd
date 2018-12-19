@@ -1,5 +1,5 @@
 <center>
-<img alt="bca logo" src="https://lh5.googleusercontent.com/b71zMOQnUd3d3GgJFhNX_FObcOhal-7k_6WvsdwR43bnvLFzSzsaL_lZvC8Uj2YJpW_8VXngvjLCQ8yXjRMq=w1920-h927-rw" width="200px">
+<img alt="bca logo" src="https://challengepost-s3-challengepost.netdna-ssl.com/photos/production/challenge_thumbnails/000/368/036/datas/original.png" width="200px">
 </center>
 
 # BCA CTF Web
