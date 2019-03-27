@@ -21,6 +21,7 @@ from CTFd.utils.decorators.visibility import check_registration_visibility
 from CTFd.utils.modes import TEAMS_MODE, USERS_MODE
 from CTFd.utils.security.signing import serialize, unserialize, SignatureExpired, BadSignature, BadTimeSignature
 from CTFd.utils.helpers import info_for, error_for, get_errors, get_infos
+from CTFd.utils.config.visibility import registration_visible
 
 import base64
 import requests
@@ -47,7 +48,7 @@ def confirm(data=None):
 
         user = Users.query.filter_by(email=user_email).first_or_404()
         user.verified = True
-        log('registrations', format="[{date}] {ip} -  successful password reset for {name}")
+        log('registrations', format="[{date}] {ip} - successful confirmation for {name}", name=user.name)
         db.session.commit()
         db.session.close()
         if current_user.authed():
@@ -140,18 +141,13 @@ def register():
         valid_email = validators.validate_email(request.form['email'])
         team_name_email_check = validators.validate_email(name)
 
-        local_id, _, domain = email_address.partition('@')
-
-        domain_whitelist = get_config('domain_whitelist')
-
         if not valid_email:
             errors.append("Please enter a valid email address")
-        if domain_whitelist:
-            domain_whitelist = [d.strip() for d in domain_whitelist.split(',')]
-            if domain not in domain_whitelist:
+        if email.check_email_is_whitelisted(email_address) is False:
                 errors.append(
                     "Only email addresses under {domains} may register".format(
-                        domains=', '.join(domain_whitelist))
+                        domains=get_config('domain_whitelist')
+                    )
                 )
         if names:
             errors.append('That team name is already taken')
@@ -310,7 +306,7 @@ def oauth_redirect():
             token = token_request.json()['access_token']
             user_url = get_app_config('OAUTH_API_ENDPOINT') \
                 or get_config('oauth_api_endpoint') \
-                or 'http://api.majorleaguecyber.org/user'
+                or 'https://api.majorleaguecyber.org/user'
 
             headers = {
                 'Authorization': 'Bearer ' + str(token),
@@ -324,14 +320,23 @@ def oauth_redirect():
 
             user = Users.query.filter_by(email=user_email).first()
             if user is None:
-                user = Users(
-                    name=user_name,
-                    email=user_email,
-                    oauth_id=user_id,
-                    verified=True
-                )
-                db.session.add(user)
-                db.session.commit()
+                # Check if we are allowing registration before creating users
+                if registration_visible():
+                    user = Users(
+                        name=user_name,
+                        email=user_email,
+                        oauth_id=user_id,
+                        verified=True
+                    )
+                    db.session.add(user)
+                    db.session.commit()
+                else:
+                    log('logins', "[{date}] {ip} - Public registration via MLC blocked")
+                    error_for(
+                        endpoint='auth.login',
+                        message='Public registration is disabled. Please try again later.'
+                    )
+                    return redirect(url_for('auth.login'))
 
             if get_config('user_mode') == TEAMS_MODE:
                 team_id = api_data['team']['id']
@@ -347,6 +352,11 @@ def oauth_redirect():
                     db.session.commit()
 
                 team.members.append(user)
+                db.session.commit()
+
+            if user.oauth_id is None:
+                user.oauth_id = user_id
+                user.verified = True
                 db.session.commit()
 
             login_user(user)

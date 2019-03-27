@@ -56,7 +56,7 @@ def test_page_requiring_auth():
         with app.test_client() as client:
             r = client.get('/this-is-a-route')
             assert r.status_code == 302
-            assert r.location == 'http://localhost/login?next=%2Fthis-is-a-route'
+            assert r.location == 'http://localhost/login?next=%2Fthis-is-a-route%3F'
 
         register_user(app)
         client = login_as_user(app)
@@ -121,34 +121,6 @@ def test_user_get_profile():
         client = login_as_user(app)
         r = client.get('/profile')
         assert r.status_code == 200
-    destroy_ctfd(app)
-
-
-def test_user_set_profile():
-    """Can a registered user set their private profile (/profile)"""
-    app = create_ctfd()
-    with app.app_context():
-        register_user(app)
-        client = login_as_user(app)
-        r = client.get('/profile')
-        with client.session_transaction() as sess:
-            data = {
-                'name': 'user',
-                'email': 'user@ctfd.io',
-                # 'confirm': '',
-                # 'password': '',
-                'affiliation': 'affiliation_test',
-                'website': 'https://ctfd.io',
-                'country': 'US',
-            }
-
-        r = client.patch('/api/v1/users/me', json=data)
-        assert r.status_code == 200
-
-        user = Users.query.filter_by(id=2).first()
-        assert user.affiliation == 'affiliation_test'
-        assert user.website == 'https://ctfd.io'
-        assert user.country == 'US'
     destroy_ctfd(app)
 
 

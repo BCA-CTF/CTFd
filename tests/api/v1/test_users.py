@@ -118,6 +118,102 @@ def test_api_users_post_admin_with_attributes():
     destroy_ctfd(app)
 
 
+def test_api_users_post_admin_duplicate_information():
+    """Can an admin create a user with duplicate information"""
+    app = create_ctfd()
+    with app.app_context():
+        register_user(app)
+        with login_as_user(app, 'admin') as client:
+            # Duplicate email
+            r = client.post('/api/v1/users', json={
+                "name": "user2",
+                "email": "user@ctfd.io",
+                "password": "password"
+            })
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp['errors']['email']
+            assert resp['success'] is False
+            assert Users.query.count() == 2
+
+            # Duplicate user
+            r = client.post('/api/v1/users', json={
+                "name": "user",
+                "email": "user2@ctfd.io",
+                "password": "password"
+            })
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp['errors']['name']
+            assert resp['success'] is False
+            assert Users.query.count() == 2
+    destroy_ctfd(app)
+
+
+def test_api_users_patch_admin_duplicate_information():
+    """Can an admin modify a user with duplicate information"""
+    app = create_ctfd()
+    with app.app_context():
+        register_user(app, name="user1", email="user1@ctfd.io", password="password")
+        register_user(app, name="user2", email="user2@ctfd.io", password="password")
+        with login_as_user(app, 'admin') as client:
+            # Duplicate name
+            r = client.patch('/api/v1/users/1', json={
+                "name": "user2",
+                "email": "user@ctfd.io",
+                "password": "password"
+            })
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp['errors']['name']
+            assert resp['success'] is False
+
+            # Duplicate email
+            r = client.patch('/api/v1/users/1', json={
+                "name": "user",
+                "email": "user2@ctfd.io",
+                "password": "password"
+            })
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp['errors']['email']
+            assert resp['success'] is False
+            assert Users.query.count() == 3
+    destroy_ctfd(app)
+
+
+def test_api_users_patch_duplicate_information():
+    """Can a user modify their information to another user's"""
+    app = create_ctfd()
+    with app.app_context():
+        register_user(app, name="user1", email="user1@ctfd.io", password="password")
+        register_user(app, name="user2", email="user2@ctfd.io", password="password")
+        with login_as_user(app, 'user1') as client:
+            # Duplicate email
+            r = client.patch('/api/v1/users/me', json={
+                "name": "user2",
+                "email": "user@ctfd.io",
+                "password": "password"
+            })
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp['errors']['name']
+            assert resp['success'] is False
+
+            # Duplicate user
+            r = client.patch('/api/v1/users/me', json={
+                "name": "user",
+                "email": "user2@ctfd.io",
+                "password": "password"
+            })
+            resp = r.get_json()
+            assert r.status_code == 400
+            assert resp['errors']['email']
+            assert resp['success'] is False
+            assert Users.query.count() == 3
+    destroy_ctfd(app)
+
+
 def test_api_team_get_public():
     """Can a user get /api/v1/team/<user_id> if users are public"""
     app = create_ctfd()
@@ -264,13 +360,118 @@ def test_api_user_patch_me_logged_in():
     with app.app_context():
         register_user(app)
         with login_as_user(app) as client:
-            r = client.patch('/api/v1/users/me', json={"name": "user",
-                                                       "email": "user@ctfd.io",
-                                                       "password": "password",
-                                                       "confirm": "password",
-                                                       "country": "US"})
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "name": "user",
+                    "email": "user@ctfd.io",
+                    "password": "password",
+                    "confirm": "password",
+                    "country": "US"
+                }
+            )
             assert r.status_code == 200
             assert r.get_json()['data']['country'] == 'US'
+    destroy_ctfd(app)
+
+
+def test_api_user_change_name():
+    """Can a user change their name via the API"""
+    app = create_ctfd()
+    with app.app_context():
+        register_user(app)
+        with login_as_user(app) as client:
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "name": "user2",
+                }
+            )
+            assert r.status_code == 200
+            resp = r.get_json()
+            assert resp['data']['name'] == 'user2'
+            assert resp['success'] is True
+
+            set_config('name_changes', False)
+
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "name": "new_name",
+                }
+            )
+            assert r.status_code == 400
+            resp = r.get_json()
+            assert 'name' in resp['errors']
+            assert resp['success'] is False
+
+            set_config('name_changes', True)
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "name": "new_name",
+                }
+            )
+            assert r.status_code == 200
+            resp = r.get_json()
+            assert resp['data']['name'] == 'new_name'
+            assert resp['success'] is True
+    destroy_ctfd(app)
+
+
+def test_api_user_change_verify_email():
+    """Test that users are marked unconfirmed if they change their email and verify_emails is turned on"""
+    app = create_ctfd()
+    with app.app_context():
+        set_config('verify_emails', True)
+        register_user(app)
+        user = Users.query.filter_by(id=2).first()
+        user.verified = True
+        app.db.session.commit()
+        with login_as_user(app) as client:
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "email": "new_email@email.com",
+                }
+            )
+            assert r.status_code == 200
+            resp = r.get_json()
+            assert resp['data']['email'] == "new_email@email.com"
+            assert resp['success'] is True
+            user = Users.query.filter_by(id=2).first()
+            assert user.verified is False
+    destroy_ctfd(app)
+
+
+def test_api_user_change_email_under_whitelist():
+    """Test that users can only change emails to ones in the whitelist"""
+    app = create_ctfd()
+    with app.app_context():
+        register_user(app)
+        set_config('domain_whitelist', 'whitelisted.com, whitelisted.org, whitelisted.net')
+        with login_as_user(app) as client:
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "email": "new_email@email.com",
+                }
+            )
+            assert r.status_code == 400
+            resp = r.get_json()
+            assert resp['errors']['email']
+            assert resp['success'] is False
+
+            r = client.patch(
+                '/api/v1/users/me',
+                json={
+                    "email": "new_email@whitelisted.com",
+                }
+            )
+            assert r.status_code == 200
+            resp = r.get_json()
+            assert resp['data']['email'] == "new_email@whitelisted.com"
+            assert resp['success'] is True
     destroy_ctfd(app)
 
 
@@ -367,4 +568,61 @@ def test_api_user_get_awards():
         with login_as_user(app) as client:
             r = client.get('/api/v1/users/2/awards')
             assert r.status_code == 200
+    destroy_ctfd(app)
+
+
+def test_api_user_send_email():
+    """Can an admin post /api/v1/users/<user_id>/email"""
+    app = create_ctfd()
+    with app.app_context():
+
+        register_user(app)
+
+        with login_as_user(app) as client:
+            r = client.post('/api/v1/users/2/email', json={
+                'text': 'email should get rejected'
+            })
+            assert r.status_code == 403
+
+        with login_as_user(app, "admin") as admin:
+            r = admin.post('/api/v1/users/2/email', json={
+                'text': 'email should be accepted'
+            })
+            assert r.get_json() == {
+                'success': False,
+                'errors': {
+                    "": [
+                        "Email settings not configured"
+                    ]
+                }
+            }
+            assert r.status_code == 400
+
+        set_config('verify_emails', True)
+        set_config('mail_server', 'localhost')
+        set_config('mail_port', 25)
+        set_config('mail_useauth', True)
+        set_config('mail_username', 'username')
+        set_config('mail_password', 'password')
+
+        with login_as_user(app, "admin") as admin:
+            r = admin.post('/api/v1/users/2/email', json={
+                'text': ''
+            })
+            assert r.get_json() == {
+                'success': False,
+                'errors': {
+                    "text": [
+                        "Email text cannot be empty"
+                    ]
+                }
+            }
+            assert r.status_code == 400
+
+        with login_as_user(app, "admin") as admin:
+            r = admin.post('/api/v1/users/2/email', json={
+                'text': 'email should be accepted'
+            })
+            assert r.status_code == 200
+
     destroy_ctfd(app)

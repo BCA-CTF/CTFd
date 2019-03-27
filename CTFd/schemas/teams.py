@@ -4,6 +4,7 @@ from marshmallow import validate, ValidationError, pre_load
 from marshmallow_sqlalchemy import field_for
 from CTFd.models import ma, Teams
 from CTFd.utils.validators import validate_country_code
+from CTFd.utils import get_config
 from CTFd.utils.user import is_admin, get_current_team
 from CTFd.utils.countries import lookup_country_code
 from CTFd.utils.user import is_admin, get_current_team
@@ -57,7 +58,7 @@ class TeamSchema(ma.ModelSchema):
         if is_admin():
             team_id = int(data.get('id', 0))
             if team_id:
-                if existing_team.id != team_id:
+                if existing_team and existing_team.id != team_id:
                     raise ValidationError('Team name has already been taken', field_names=['name'])
             else:
                 # If there's no Team ID it means that the admin is creating a team with no ID.
@@ -69,6 +70,10 @@ class TeamSchema(ma.ModelSchema):
             if data['name'] == current_team.name:
                 return data
             else:
+                name_changes = get_config('name_changes', default=True)
+                if bool(name_changes) is False:
+                    raise ValidationError('Name changes are disabled', field_names=['name'])
+
                 if existing_team:
                     raise ValidationError('Team name has already been taken', field_names=['name'])
 
@@ -78,18 +83,21 @@ class TeamSchema(ma.ModelSchema):
         if email is None:
             return
 
-        obj = Teams.query.filter_by(email=email).first()
-        if obj:
-            if is_admin():
-                if data.get('id'):
-                    target_user = Teams.query.filter_by(id=data['id']).first()
-                else:
-                    target_user = get_current_team()
-
-                if target_user and obj.id != target_user.id:
+        existing_team = Teams.query.filter_by(email=email).first()
+        if is_admin():
+            team_id = data.get('id')
+            if team_id:
+                if existing_team and existing_team.id != team_id:
                     raise ValidationError('Email address has already been used', field_names=['email'])
             else:
-                if obj.id != get_current_team().id:
+                if existing_team:
+                    raise ValidationError('Email address has already been used', field_names=['email'])
+        else:
+            current_team = get_current_team()
+            if email == current_team.email:
+                return data
+            else:
+                if existing_team:
                     raise ValidationError('Email address has already been used', field_names=['email'])
 
     @pre_load

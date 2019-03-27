@@ -2,7 +2,8 @@ import sys
 import os
 
 from distutils.version import StrictVersion
-from flask import Flask
+from flask import Flask, Request
+from werkzeug.utils import cached_property
 from werkzeug.contrib.fixers import ProxyFix
 from jinja2 import FileSystemLoader
 from jinja2.sandbox import SandboxedEnvironment
@@ -12,7 +13,7 @@ from CTFd import utils
 from CTFd.utils.migrations import migrations, migrate, upgrade, stamp, create_database
 from CTFd.utils.sessions import CachingSessionInterface
 from CTFd.utils.updates import update_check
-from CTFd.utils.initialization import init_request_processors, init_template_filters, init_template_globals
+from CTFd.utils.initialization import init_request_processors, init_template_filters, init_template_globals, init_logs
 from CTFd.utils.events import socketio
 from CTFd.plugins import init_plugins
 
@@ -21,7 +22,20 @@ if sys.version_info[0] < 3:
     reload(sys)
     sys.setdefaultencoding("utf-8")
 
-__version__ = '2.0.1'
+__version__ = '2.0.5'
+
+
+class CTFdRequest(Request):
+    @cached_property
+    def path(self):
+        """
+        Hijack the original Flask request path because it does not account for subdirectory deployments in an intuitive
+        manner. We append script_root so that the path always points to the full path as seen in the browser.
+        e.g. /subdirectory/path/route vs /path/route
+
+        :return: string
+        """
+        return self.script_root + super(CTFdRequest, self).path
 
 
 class CTFdFlask(Flask):
@@ -29,6 +43,7 @@ class CTFdFlask(Flask):
         """Overriden Jinja constructor setting a custom jinja_environment"""
         self.jinja_environment = SandboxedBaseEnvironment
         self.session_interface = CachingSessionInterface(key_prefix='session')
+        self.request_class = CTFdRequest
         Flask.__init__(self, *args, **kwargs)
 
     def create_jinja_environment(self):
@@ -191,6 +206,7 @@ def create_app(config='CTFd.config.Config'):
         app.register_error_handler(500, general_error)
         app.register_error_handler(502, gateway_error)
 
+        init_logs(app)
         init_plugins(app)
 
         return app

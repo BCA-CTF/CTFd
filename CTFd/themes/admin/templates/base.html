@@ -10,10 +10,11 @@
 	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/vendor/bootstrap.min.css') }}">
 	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/vendor/font-awesome/fontawesome-fonts.css') }}" type='text/css'>
 	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/vendor/font-awesome/fontawesome-all.min.css') }}" type='text/css'>
-	<link rel="stylesheet" href='{{ url_for('views.themes', theme='admin', path='css/vendor/font.css') }}'>
+	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/vendor/font.css') }}">
 	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/jumbotron.css') }}">
 	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/sticky-footer.css') }}">
 	<link rel="stylesheet" href="{{ url_for('views.themes', theme='admin', path='css/base.css') }}">
+	<script src="{{ url_for('views.themes', theme='core', path='js/CTFd.js') }}"></script>
 	<script src="{{ url_for('views.themes', theme='admin', path='js/vendor/promise-polyfill.min.js') }}"></script>
 	<script src="{{ url_for('views.themes', theme='admin', path='js/vendor/fetch.min.js') }}"></script>
 	<script src="{{ url_for('views.themes', theme='admin', path='js/vendor/moment.min.js') }}"></script>
@@ -23,8 +24,19 @@
 		var script_root = "{{ request.script_root }}";
 		var csrf_nonce = "{{ nonce }}";
 		var user_mode = "{{ get_config('user_mode') }}";
+		CTFd.options.urlRoot = script_root;
+		CTFd.options.csrfNonce = csrf_nonce;
 	</script>
 	{% block stylesheets %} {% endblock %}
+	{% for stylesheet in get_registered_admin_stylesheets() %}
+		{% if stylesheet.startswith('http') %}
+			<link rel="stylesheet" type="text/css" href="{{ stylesheet }}">
+		{% elif request.script_root %}
+			<link rel="stylesheet" type="text/css" href="{{ request.script_root }}/{{ stylesheet }}">
+		{% else %}
+			<link rel="stylesheet" type="text/css" href="{{ stylesheet }}">
+		{% endif %}
+	{% endfor %}
 </head>
 
 <body>
@@ -135,6 +147,16 @@
 	<script src="{{ url_for('views.themes', theme='admin', path='js/ezq.js') }}"></script>
 	<script src="{{ url_for('views.themes', theme='admin', path='js/style.js') }}"></script>
 	{% block scripts %} {% endblock %}
+
+	{% for script in get_registered_admin_scripts() %}
+		{% if script.startswith('http') %}
+			<script src="{{ script }}"></script>
+		{% elif request.script_root %}
+			<script src="{{ request.script_root }}/{{ script }}"></script>
+		{% else %}
+			<script src="{{ script }}"></script>
+		{% endif %}
+	{% endfor %}
 </body>
 
 </html>

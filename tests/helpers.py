@@ -1,3 +1,5 @@
+from flask.testing import FlaskClient
+from werkzeug.datastructures import Headers
 from CTFd import create_app
 from CTFd.config import TestingConfig
 from CTFd.models import *
@@ -5,9 +7,11 @@ from CTFd.cache import cache
 from sqlalchemy_utils import database_exists, create_database, drop_database
 from sqlalchemy.engine.url import make_url
 from collections import namedtuple
+from mock import Mock, patch
 import datetime
 import six
 import gc
+import requests
 
 if six.PY2:
     text_type = unicode
@@ -20,11 +24,29 @@ else:
 FakeRequest = namedtuple('FakeRequest', ['form'])
 
 
-def create_ctfd(ctf_name="CTFd", name="admin", email="admin@ctfd.io", password="password", user_mode="users", setup=True, enable_plugins=False):
+class CTFdTestClient(FlaskClient):
+    def open(self, *args, **kwargs):
+        if kwargs.get('json') is not None:
+            with self.session_transaction() as sess:
+                api_key_headers = Headers({
+                    'CSRF-Token': sess.get('nonce')
+                })
+                headers = kwargs.pop('headers', Headers())
+                headers.extend(api_key_headers)
+                kwargs['headers'] = headers
+        return super(CTFdTestClient, self).open(*args, **kwargs)
+
+
+def create_ctfd(ctf_name="CTFd", name="admin", email="admin@ctfd.io", password="password", user_mode="users", setup=True, enable_plugins=False, application_root='/'):
     if enable_plugins:
         TestingConfig.SAFE_MODE = False
+    else:
+        TestingConfig.SAFE_MODE = True
+
+    TestingConfig.APPLICATION_ROOT = application_root
 
     app = create_app(TestingConfig)
+    app.test_client_class = CTFdTestClient
 
     if setup:
         app = setup_ctfd(app, ctf_name, name, email, password, user_mode)
@@ -55,7 +77,7 @@ def destroy_ctfd(app):
         drop_database(app.config['SQLALCHEMY_DATABASE_URI'])
 
 
-def register_user(app, name="user", email="user@ctfd.io", password="password"):
+def register_user(app, name="user", email="user@ctfd.io", password="password", raise_for_error=True):
     with app.app_context():
         with app.test_client() as client:
             r = client.get('/register')
@@ -67,9 +89,16 @@ def register_user(app, name="user", email="user@ctfd.io", password="password"):
                     "nonce": sess.get('nonce')
                 }
             client.post('/register', data=data)
+            if raise_for_error:
+                with client.session_transaction() as sess:
+                    assert sess['id']
+                    assert sess['name'] == name
+                    assert sess['type']
+                    assert sess['email']
+                    assert sess['nonce']
 
 
-def register_team(app, name="team", password="password"):
+def register_team(app, name="team", password="password", raise_for_error=True):
     with app.app_context():
         with app.test_client() as client:
             r = client.get('/team')
@@ -79,10 +108,13 @@ def register_team(app, name="team", password="password"):
                     "password": password,
                     "nonce": sess.get('nonce')
                 }
-            client.post('/teams/new', data=data)
+            r = client.post('/teams/new', data=data)
+            if raise_for_error:
+                assert r.status_code == 302
+            return client
 
 
-def login_as_user(app, name="user", password="password"):
+def login_as_user(app, name="user", password="password", raise_for_error=True):
     with app.app_context():
         with app.test_client() as client:
             r = client.get('/login')
@@ -93,7 +125,67 @@ def login_as_user(app, name="user", password="password"):
                     "nonce": sess.get('nonce')
                 }
             client.post('/login', data=data)
+            if raise_for_error:
+                with client.session_transaction() as sess:
+                    assert sess['id']
+                    assert sess['name']
+                    assert sess['type']
+                    assert sess['email']
+                    assert sess['nonce']
             return client
+
+
+def login_with_mlc(app, name='user', scope='profile%20team', email='user@ctfd.io', oauth_id=1337, team_name='TestTeam', team_oauth_id=1234, raise_for_error=True):
+    with app.test_client() as client, \
+            patch.object(requests, 'get') as fake_get_request, \
+            patch.object(requests, 'post') as fake_post_request:
+        client.get('/login')
+        with client.session_transaction() as sess:
+            nonce = sess['nonce']
+
+            redirect_url = "{endpoint}?response_type=code&client_id={client_id}&scope={scope}&state={state}".format(
+                endpoint=app.config['OAUTH_AUTHORIZATION_ENDPOINT'],
+                client_id=app.config['OAUTH_CLIENT_ID'],
+                scope=scope,
+                state=nonce
+            )
+
+        r = client.get('/oauth', follow_redirects=False)
+        assert r.location == redirect_url
+
+        fake_post_response = Mock()
+        fake_post_request.return_value = fake_post_response
+        fake_post_response.status_code = 200
+        fake_post_response.json = lambda: {
+            'access_token': 'fake_mlc_access_token'
+        }
+
+        fake_get_response = Mock()
+        fake_get_request.return_value = fake_get_response
+        fake_get_response.status_code = 200
+        fake_get_response.json = lambda: {
+            'id': oauth_id,
+            'name': name,
+            'email': email,
+            'team': {
+                'id': team_oauth_id,
+                'name': team_name
+            }
+        }
+
+        client.get('/redirect?code={code}&state={state}'.format(
+            code='mlc_test_code',
+            state=nonce
+        ), follow_redirects=False)
+
+        if raise_for_error:
+            with client.session_transaction() as sess:
+                assert sess['id']
+                assert sess['name']
+                assert sess['type']
+                assert sess['email']
+                assert sess['nonce']
+        return client
 
 
 def get_scores(user):
@@ -208,7 +300,7 @@ def gen_page(db, title, route, content, draft=False, auth_required=False, **kwar
     return page
 
 
-def gen_notification(db, title, content):
+def gen_notification(db, title='title', content='content'):
     notif = Notifications(title=title, content=content)
     db.session.add(notif)
     db.session.commit()

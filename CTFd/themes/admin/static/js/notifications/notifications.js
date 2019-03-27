@@ -4,7 +4,7 @@ $(document).ready(function () {
         var form = $('#notifications_form');
         var params = form.serializeJSON();
 
-        fetch(script_root + '/api/v1/notifications', {
+        CTFd.fetch('/api/v1/notifications', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
@@ -14,6 +14,34 @@ $(document).ready(function () {
             body: JSON.stringify(params)
         }).then(function (response) {
             return response.json();
+        }).then(function (response) {
+            if (response.success) {
+                setTimeout(function () {
+                    window.location.reload();
+                }, 3000);
+            }
+        });
+    });
+
+    $('.delete-notification').click(function (e) {
+        e.preventDefault();
+        var elem = $(this);
+        var notif_id = elem.attr("notif-id");
+
+        ezq({
+            title: 'Delete Notification',
+            body: "Are you sure you want to delete this notification?",
+            success: function () {
+                CTFd.fetch('/api/v1/notifications/' + notif_id, {
+                    method: 'DELETE',
+                }).then(function (response) {
+                    return response.json();
+                }).then(function (response) {
+                    if (response.success) {
+                        elem.parent().remove();
+                    }
+                });
+            }
         });
     });
 });

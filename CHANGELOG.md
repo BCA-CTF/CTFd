@@ -1,18 +1,129 @@
+2.0.5 / 2019-03-23
+==================
+
+**Security**
+* Fixes an issue where user email addresses could be disclosed to non-admins
+
+**General**
+* Dockerfile now installs `linux-headers` package from apk
+* Hidden teams are no longer visible publicly
+* Fixes an issue where long content made it it difficult/impossible to edit flags and hints
+* Fix for users not being able to edit portions of their own profile
+* Fix for solves not being frozen for teams.
+* Reimplement direct user email sending from the admin panel
+* Fixes an issue where confirmation logs would report None instead of the user if the browser was unauthenticated
+* Fixes an issue where SMTP server configuration (MAIL_SERVER, MAIL_PORT) were not being read from `config.py`
+* Fixes for a user's place on their profile showing a different place than the scoreboard
+* Fixes for an issue where dynamic challenge values would appear to change after being solved by a hidden user
+
+**Exports**
+* Exports are now saved on disk with `tempfile.NamedTemporaryFile()` instead of memory during creation
+* After importing an export, CTFd will now recreate all tables it expects to be available. This resolves an issue where tables created by plugins would be missing after an import.
+
+2.0.4 / 2019-01-30
+==================
+
+**General**
+* Block user & team name changes if name changes are disabled (Closes #835)
+* Set accounts to unconfirmed if email is changed while `verify_emails` is enabled
+* Only allow users to change their email to emails with domains in the whitelist.
+* Add `email.check_email_is_whitelisted()` to verify that a user's email is whitelisted.
+* Create a `get_config` wrapper around the internal `_get_config` to let us set a default config value (Closes #659)
+* Remove `utils.get_app_config()` from memoization and also give it a `default` parameter
+* Move `utils.logging.init_logs()` into `utils.initialization` and properly call `init_logs()` to save logs to the logs folder
+* Block the creation of users/teams from MLC if registration_visibility is private
+* Fix showing incorrect 'CTF has ended' error if `view_after_ctf` is set.
+* Fix creating users from the admin panel while name changes are disabled.
+
+**API**
+* `/api/v1/teams/<team_id>` now coerced to an int (i.e. `/api/v1/teams/<int:team_id>`)
+
+**Deployment**
+* Re-add the `LOG_FOLDER` envvar to docker-compose so we don't try to write to the read-only host
+* Stop gunicorn from logging to `LOG_FOLDER` in docker without explicit opt-in
+* Add `ACCESS_LOG` and `ERROR_LOG` envvars to docker to specify where gunicorn will log to
+* Allow `DATABASE_URL` to contain custom MySQL ports for `docker-entrypoint.sh`
+* Drop `WORKERS` count to 1 to avoid dealing with Flask-SocketIO sticky sessions'
+* Install `gevent-websocket` and use it by default until we have a better solution
+* NOTE: In future releases, websockets functionality will likely be removed. (#852)
+
+
+2.0.3 / 2019-01-12
+==================
+
+**Security Release**
+
+This release resolves a security issue that allowed malicious users to hijack admin browser sessions in certain browsers under certain configurations.
+
+The implemented fix is to require the new `CSRF-Token` header on state-changing requests with a Content-Type of application/json.
+The same nonce used for standard POST requests is re-used for the `CSRF-Token` header.
+
+Because of the necessary changes to the API, the previously used call to `fetch()` in themes should now be replaced with `CTFd.fetch()`.
+
+**Security**
+* Require `CSRF-Token` header on all API requests.
+* Require CSRF protection on all HTTP methods except `GET`, `HEAD`, `OPTIONS`, and `TRACE`.
+* Default session cookie to `SameSite=Lax`
+* Send initial user information request to MajorLeagueCyber over HTTPS
+
+**General**
+* Fix `update_check()` logic so that we don't accidentally remove the update notification.
+
+**Themes**
+* Remove explicit usage of `script_root` in public JS.
+   * In custom themes, use the `CTFd.fetch()` function (defined in `CTFd.js`) and properly register the url root and CSRF nonce in `base.html` as shown below:
+    ```javascript
+    var script_root = "{{ request.script_root }}";
+    var csrf_nonce = "{{ nonce }}";
+    CTFd.options.urlRoot = script_root;
+    CTFd.options.csrfNonce = csrf_nonce;
+    ```
+* Reduce required amount of parameters required for static theme files.
+   * i.e. `url_for('views.themes')` no longer requires the themes parameter. It now defaults to the currently in-use theme.
+
+
+2.0.2 / 2019-01-03
+==================
+
+**General**
+* Fix regression where public challenges could not be attempted by unauthed users.
+* Admin Config Panel UI no longer allows changing of user mode.
+* Show notification titles and allow for deleting notifications
+    * Update notification UI in admin panel to be similar to the public-facing UI
+* Fix subdirectory deployments in a generic manner by modifying `request.path` to combine both `request.script_root` and `request.path`.
+    * Also create a request preprocessor to redirect users into the true CTFd app when deploying on a subdirectory.
+    * Redirect to `request.full_path` instead of just `request.path`.
+* Fix `TestingConfig.SAFE_MODE` not being reset between tests.
+* Disable `value` input in dynamic challenge update field since we calculate it on the user's behalf.
+* Fix displaying incorrect account link in the solves tab of a challenge modal.
+* Pin `normality` version because of an upstream issue in `dataset`.
+* Fix `500`'s when users submit non-integer values to `?page=1`
+
+**API**
+* Add `/api/v1/notifications/<id>` to allow accessing notifactions by ID.
+    * This is currently public but will become permission based later in the future
+* Add `account_url` field to the response of `/api/v1/<challenge_id>/solves` so the client knows where an account is located.
+
+**Plugins**
+* Add new plugin utilities to register javascript and css files for the admin panel.
+    * Also fixed issue where those scripts and files were shared between generated applications
+
+
 2.0.1 / 2018-12-09
 ==================
 
-2.0.1 is a patch release to fix regressions and bugs in 2.0.0. 
+2.0.1 is a patch release to fix regressions and bugs in 2.0.0.
 
 If you are upgrading from a version prior to 2.0.0 please read the 2.0.0 change notes for instructions on updating to
-2.0.0 before updating to 2.0.1. 
+2.0.0 before updating to 2.0.1.
 
 **General**
-* Fix setting auth for `get_smtp()`. 
+* Fix setting auth for `get_smtp()`.
     * Add `MAIL_USEAUTH` to `config.py`.
 * Add more mail documentation to `config.py`.
 * Disable jinja cache properly by setting `cache_size` to 0 (#662)
     Regression from 1.2.0.
-* Fix downloading files as an anonymous user. 
+* Fix downloading files as an anonymous user.
 * Fix viewing challenges anonymously if they have empty requirements. Closes #789
     * Allow anonymous users to see see challenges with empty requirements or anonymized challenges
 * Clean up admin mail settings to use new label/small structure
@@ -38,25 +149,25 @@ If you are upgrading from a version prior to 2.0.0 please read the 2.0.0 change 
 2.0.0 / 2018-12-02
 ==================
 
-2.0.0 is a *significant*, backwards-incompaitble release. 
+2.0.0 is a *significant*, backwards-incompaitble release.
 
-Many unofficial plugins will not be supported in CTFd 2.0.0. If you're having trouble updating your plugins 
+Many unofficial plugins will not be supported in CTFd 2.0.0. If you're having trouble updating your plugins
 please join [the CTFd Slack](https://slack.ctfd.io/) for help and discussion.
 
-If you are upgrading from a prior version be sure to make backups and have a reversion plan before upgrading.  
+If you are upgrading from a prior version be sure to make backups and have a reversion plan before upgrading.
 
 * If upgrading from 1.2.0 please make use of the `migrations/1_2_0_upgrade_2_0_0.py` script as follows:
     1. Make all necessary backups. Backup the database, uploads folder, and source code directory.
-    2. Upgrade the source code directory (i.e. `git pull`) but do not run any updated code yet. 
+    2. Upgrade the source code directory (i.e. `git pull`) but do not run any updated code yet.
     3. Set the `DATABASE_URL` in `CTFd/config.py` to point to your existing CTFd database.
     3. Run the upgrade script from the CTFd root folder i.e. `python migrations/1_2_0_upgrade_2_0_0.py`.
-        * This migration script will attempt to migrate data inside the database to 2.0.0 but it cannot account for every situation. 
+        * This migration script will attempt to migrate data inside the database to 2.0.0 but it cannot account for every situation.
         * Examples of situations where you may need to manually migrate data:
             * Tables/columns created by plugins
             * Tables/columns created by forks
             * Using databases which are not officially supported (e.g. sqlite, postgres)
     4. Setup the rest of CTFd (i.e. config.py), migrate/update any plugins, and run normally.
-* If upgrading from a version before 1.2.0, please upgrade to 1.2.0 and then continue with the steps above. 
+* If upgrading from a version before 1.2.0, please upgrade to 1.2.0 and then continue with the steps above.
 
 **General**
 
@@ -65,10 +176,10 @@ If you are upgrading from a prior version be sure to make backups and have a rev
     * Use Team Mode if you want users to create and join teams to play together.
 * Integration with MajorLeagueCyber (MLC). (https://majorleaguecyber.org)
     * Organizers can register their event with MLC and will receive OAuth Client ID & Client Secret.
-    * Organizers can set those OAuth credentials in CTFd to allow users and teams to automatically register in a CTF. 
+    * Organizers can set those OAuth credentials in CTFd to allow users and teams to automatically register in a CTF.
 * Data is now provided to the front-end via the REST API. (#551)
     * Javascript uses `fetch()` to consume the REST API.
-* Dynamic Challenges are built in. 
+* Dynamic Challenges are built in.
 * S3 backed uploading/downloading built in. (#661)
 * Real time notifications/announcements. (#600)
     * Uses long-polling instead of websockets to simplify deployment.
@@ -92,7 +203,7 @@ If you are upgrading from a prior version be sure to make backups and have a rev
     * `docker-entrypoint.sh` exits on any error. (#717)
 * Increased test coverage.
 * Create `SAFE_MODE` configuration to disable loading of plugins.
-* Migrations have been reset. 
+* Migrations have been reset.
 
 **Themes**
 
@@ -115,7 +226,7 @@ If you are upgrading from a prior version be sure to make backups and have a rev
 * Rename challenge type plugins to use `.html` and have simplified names. (create, update, view)
 * Many functions have moved around because utils.py has been broken up and refactored. (#475)
 * Marshmallow (https://marshmallow.readthedocs.io) is now used by the REST API to validate and serialize/deserialize API data.
-    * Marshmallow schemas and views are used to restrict SQLAlchemy columns to user roles. 
+    * Marshmallow schemas and views are used to restrict SQLAlchemy columns to user roles.
 * The REST API features swagger support but this requires more utilization internally.
 * Errors can now be provided between routes and decoraters through message flashing. (CTFd.utils.helpers; get_errors, get_infos, info_for, error_for)
 * Email registration regex relaxed. (#693)
