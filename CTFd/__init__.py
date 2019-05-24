@@ -3,26 +3,32 @@ import os
 
 from distutils.version import StrictVersion
 from flask import Flask, Request
+from flask_migrate import upgrade, stamp
 from werkzeug.utils import cached_property
-from werkzeug.contrib.fixers import ProxyFix
+from werkzeug.middleware.proxy_fix import ProxyFix
 from jinja2 import FileSystemLoader
 from jinja2.sandbox import SandboxedEnvironment
 from six.moves import input
 
 from CTFd import utils
-from CTFd.utils.migrations import migrations, migrate, upgrade, stamp, create_database
+from CTFd.utils.migrations import migrations, create_database
 from CTFd.utils.sessions import CachingSessionInterface
 from CTFd.utils.updates import update_check
-from CTFd.utils.initialization import init_request_processors, init_template_filters, init_template_globals, init_logs
-from CTFd.utils.events import socketio
+from CTFd.utils.initialization import (
+    init_request_processors,
+    init_template_filters,
+    init_template_globals,
+    init_logs,
+    init_events,
+)
 from CTFd.plugins import init_plugins
 
 # Hack to support Unicode in Python 2 properly
 if sys.version_info[0] < 3:
-    reload(sys)
+    reload(sys)  # noqa: F821
     sys.setdefaultencoding("utf-8")
 
-__version__ = '2.0.5'
+__version__ = "2.1.2"
 
 
 class CTFdRequest(Request):
@@ -42,7 +48,7 @@ class CTFdFlask(Flask):
     def __init__(self, *args, **kwargs):
         """Overriden Jinja constructor setting a custom jinja_environment"""
         self.jinja_environment = SandboxedBaseEnvironment
-        self.session_interface = CachingSessionInterface(key_prefix='session')
+        self.session_interface = CachingSessionInterface(key_prefix="session")
         self.request_class = CTFdRequest
         Flask.__init__(self, *args, **kwargs)
 
@@ -53,9 +59,10 @@ class CTFdFlask(Flask):
 
 class SandboxedBaseEnvironment(SandboxedEnvironment):
     """SandboxEnvironment that mimics the Flask BaseEnvironment"""
+
     def __init__(self, app, **options):
-        if 'loader' not in options:
-            options['loader'] = app.create_global_jinja_loader()
+        if "loader" not in options:
+            options["loader"] = app.create_global_jinja_loader()
         # Disable cache entirely so that themes can be switched (#662)
         # If the cache is enabled, switching themes will cause odd rendering errors
         SandboxedEnvironment.__init__(self, cache_size=0, **options)
@@ -64,7 +71,8 @@ class SandboxedBaseEnvironment(SandboxedEnvironment):
 
 class ThemeLoader(FileSystemLoader):
     """Custom FileSystemLoader that switches themes based on the configuration value"""
-    def __init__(self, searchpath, encoding='utf-8', followlinks=False):
+
+    def __init__(self, searchpath, encoding="utf-8", followlinks=False):
         super(ThemeLoader, self).__init__(searchpath, encoding, followlinks)
         self.overriden_templates = {}
 
@@ -74,14 +82,14 @@ class ThemeLoader(FileSystemLoader):
             return self.overriden_templates[template], template, True
 
         # Check if the template requested is for the admin panel
-        if template.startswith('admin/'):
+        if template.startswith("admin/"):
             template = template[6:]  # Strip out admin/
-            template = "/".join(['admin', 'templates', template])
+            template = "/".join(["admin", "templates", template])
             return super(ThemeLoader, self).get_source(environment, template)
 
         # Load regular theme data
-        theme = utils.get_config('ctf_theme')
-        template = "/".join([theme, 'templates', template])
+        theme = utils.get_config("ctf_theme")
+        template = "/".join([theme, "templates", template])
         return super(ThemeLoader, self).get_source(environment, template)
 
 
@@ -90,10 +98,10 @@ def confirm_upgrade():
         print("/*\\ CTFd has updated and must update the database! /*\\")
         print("/*\\ Please backup your database before proceeding! /*\\")
         print("/*\\ CTFd maintainers are not responsible for any data loss! /*\\")
-        if input('Run database migrations (Y/N)').lower().strip() == 'y':
+        if input("Run database migrations (Y/N)").lower().strip() == "y":
             return True
         else:
-            print('/*\\ Ignored database migrations... /*\\')
+            print("/*\\ Ignored database migrations... /*\\")
             return False
     else:
         return True
@@ -101,24 +109,36 @@ def confirm_upgrade():
 
 def run_upgrade():
     upgrade()
-    utils.set_config('ctf_version', __version__)
+    utils.set_config("ctf_version", __version__)
 
 
-def create_app(config='CTFd.config.Config'):
+def create_app(config="CTFd.config.Config"):
     app = CTFdFlask(__name__)
     with app.app_context():
         app.config.from_object(config)
 
-        theme_loader = ThemeLoader(os.path.join(app.root_path, 'themes'), followlinks=True)
+        theme_loader = ThemeLoader(
+            os.path.join(app.root_path, "themes"), followlinks=True
+        )
         app.jinja_loader = theme_loader
 
-        from CTFd.models import db, Teams, Solves, Challenges, Fails, Flags, Tags, Files, Tracking
+        from CTFd.models import (  # noqa: F401
+            db,
+            Teams,
+            Solves,
+            Challenges,
+            Fails,
+            Flags,
+            Tags,
+            Files,
+            Tracking,
+        )
 
         url = create_database()
 
         # This allows any changes to the SQLALCHEMY_DATABASE_URI to get pushed back in
         # This is mostly so we can force MySQL's charset
-        app.config['SQLALCHEMY_DATABASE_URI'] = str(url)
+        app.config["SQLALCHEMY_DATABASE_URI"] = str(url)
 
         # Register database
         db.init_app(app)
@@ -127,7 +147,7 @@ def create_app(config='CTFd.config.Config'):
         migrations.init_app(app, db)
 
         # Alembic sqlite support is lacking so we should just create_all anyway
-        if url.drivername.startswith('sqlite'):
+        if url.drivername.startswith("sqlite"):
             db.create_all()
             stamp()
         else:
@@ -147,17 +167,23 @@ def create_app(config='CTFd.config.Config'):
         cache.init_app(app)
         app.cache = cache
 
-        # If you have multiple workers you must have a shared cache
-        socketio.init_app(
-            app,
-            async_mode=app.config.get('SOCKETIO_ASYNC_MODE'),
-            message_queue=app.config.get('CACHE_REDIS_URL')
-        )
+        reverse_proxy = app.config.get("REVERSE_PROXY")
+        if reverse_proxy:
+            if "," in reverse_proxy:
+                proxyfix_args = [int(i) for i in reverse_proxy.split(",")]
+                app.wsgi_app = ProxyFix(app.wsgi_app, None, *proxyfix_args)
+            else:
+                app.wsgi_app = ProxyFix(
+                    app.wsgi_app,
+                    num_proxies=None,
+                    x_for=1,
+                    x_proto=1,
+                    x_host=1,
+                    x_port=1,
+                    x_prefix=1,
+                )
 
-        if app.config.get('REVERSE_PROXY'):
-            app.wsgi_app = ProxyFix(app.wsgi_app)
-
-        version = utils.get_config('ctf_version')
+        version = utils.get_config("ctf_version")
 
         # Upgrading from an older version of CTFd
         if version and (StrictVersion(version) < StrictVersion(__version__)):
@@ -167,10 +193,10 @@ def create_app(config='CTFd.config.Config'):
                 exit()
 
         if not version:
-            utils.set_config('ctf_version', __version__)
+            utils.set_config("ctf_version", __version__)
 
-        if not utils.get_config('ctf_theme'):
-            utils.set_config('ctf_theme', 'core')
+        if not utils.get_config("ctf_theme"):
+            utils.set_config("ctf_theme", "core")
 
         update_check(force=True)
 
@@ -207,6 +233,7 @@ def create_app(config='CTFd.config.Config'):
         app.register_error_handler(502, gateway_error)
 
         init_logs(app)
+        init_events(app)
         init_plugins(app)
 
         return app

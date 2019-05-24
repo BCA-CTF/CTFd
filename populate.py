@@ -168,20 +168,20 @@ emails = [
 ]
 extensions = [
     '.doc', '.log', '.msg', '.rtf', '.txt', '.wpd', '.wps', '.123',
-    '.csv', '.dat', '.db ', '.dll', '.mdb', '.pps', '.ppt', '.sql',
+    '.csv', '.dat', '.db', '.dll', '.mdb', '.pps', '.ppt', '.sql',
     '.wks', '.xls', '.xml', '.mng', '.pct', '.bmp', '.gif', '.jpe',
-    '.jpg', '.png', '.psd', '.psp', '.tif', '.ai ', '.drw', '.dxf',
-    '.eps', '.ps ', '.svg', '.3dm', '.3dm', '.ind', '.pdf', '.qxd',
+    '.jpg', '.png', '.psd', '.psp', '.tif', '.ai', '.drw', '.dxf',
+    '.eps', '.ps', '.svg', '.3dm', '.3dm', '.ind', '.pdf', '.qxd',
     '.qxp', '.aac', '.aif', '.iff', '.m3u', '.mid', '.mid', '.mp3',
-    '.mpa', '.ra ', '.ram', '.wav', '.wma', '.3gp', '.asf', '.asx',
-    '.avi', '.mov', '.mp4', '.mpg', '.qt ', '.rm ', '.swf', '.wmv',
-    '.asp', '.css', '.htm', '.htm', '.js ', '.jsp', '.php', '.xht',
+    '.mpa', '.ra', '.ram', '.wav', '.wma', '.3gp', '.asf', '.asx',
+    '.avi', '.mov', '.mp4', '.mpg', '.qt', '.rm', '.swf', '.wmv',
+    '.asp', '.css', '.htm', '.htm', '.js', '.jsp', '.php', '.xht',
     '.fnt', '.fon', '.otf', '.ttf', '.8bi', '.plu', '.xll', '.cab',
     '.cpl', '.cur', '.dmp', '.drv', '.key', '.lnk', '.sys', '.cfg',
     '.ini', '.reg', '.app', '.bat', '.cgi', '.com', '.exe', '.pif',
-    '.vb ', '.ws ', '.deb', '.gz ', '.pkg', '.rar', '.sea', '.sit',
+    '.vb', '.ws', '.deb', '.gz', '.pkg', '.rar', '.sea', '.sit',
     '.sit', '.zip', '.bin', '.hqx', '.0 E', '.mim', '.uue', '.cpp',
-    '.jav', '.pl ', '.bak', '.gho', '.old', '.ori', '.tmp', '.dmg',
+    '.jav', '.pl', '.bak', '.gho', '.old', '.ori', '.tmp', '.dmg',
     '.iso', '.toa', '.vcd', '.gam', '.nes', '.rom', '.sav', '.msi',
 ]
 
@@ -303,6 +303,16 @@ if __name__ == '__main__':
                     pass
 
         db.session.commit()
+
+        if mode == 'teams':
+            # Assign Team Captains
+            print("GENERATING TEAM CAPTAINS")
+            teams = Teams.query.all()
+            for team in teams:
+                captain = Users.query.filter_by(team_id=team.id).order_by(Users.id).limit(1).first()
+                if captain:
+                    team.captain_id = captain.id
+            db.session.commit()
 
         # Generating Solves
         print("GENERATING SOLVES")

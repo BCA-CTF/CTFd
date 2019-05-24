@@ -1,3 +1,178 @@
+2.1.2 / 2019-05-13
+==================
+
+**General**
+* Fix freeze time regressions in 2.x
+    * Make `/api/v1/[users,teams]/[me]/[solves,fails,awards]` endpoints load as admin so users can see their solves after freeze
+    * Make `/api/v1/challenges/[id]/solves` only show solves before freeze time
+        * Add the `?preview=true` GET parameter for admins to preview challenges solves as a user
+* Team join attempts are now ratelimited
+
+**Tests**
+* More linting and autoformatting rules
+    * Format Javascript and CSS files with `prettier`: `prettier --write 'CTFd/themes/**/*'`
+    * Format Python with `black`: `black CTFd` and `black tests`
+    * `make lint` and thus Travis now include the above commands as lint checks
+* Travis now uses xenial instead of trusty.
+
+
+2.1.1 / 2019-05-04
+==================
+
+**General**
+* Allow admins to hit `/api/v1/challenges` and `/api/v1/challenges/[id]` without having a team to fix challenge previews
+* Fix rate-limiting of flag submission when using team mode
+* Fixes some modal close buttons not working in the admin panel
+* Fixes `populate.py` to assign captains to teams.
+
+**Models**
+* Added `Challenges.flags` relationship and moved the `Flags.challenge` relationship to a backref on Challenges
+* Added `ondelete='CASCADE'` to most ForeignKeys in models allowing for deletions to remove associated data
+    * `Hints` should be deleted when their Challenge is deleted
+    * `Tags` should be deleted when their Challenge is deleted
+    * `Flags` should be deleted when their Challenge is deleted
+    * `ChallengeFiles` should be deleted when their Challenge is deleted
+        * Deletion of the file itself is not handled by the model/database
+    * `Awards` should be deleted when their user or team is deleted
+    * `Unlocks` should be deleted when their user or team is deleted
+    * `Tracking` should be deleted when their user or team is deleted
+    * `Teams.captain_id` should be set to NULL when the captain user is deleted
+
+**Exports**
+* Force `db.create_all()` to happen for imports on `sqlite` or on failure to create missing tables
+* Force `ctf_theme` to be set to `core` in imports in case a theme is missing from the import or the instance
+* Fix imports/exports to emit and accept JSON properly under MariaDB
+    * MariaDB does not properly understand JSON so it must accept strings instead of dicts
+    * MariaDB outputs strings instead of JSON for its JSON type so the export serializer will attempt to cast output JSON strings to JSON objects
+
+**Deployment**
+* Run as root when using docker-compose
+    * This is necessary to be able to write to the volumes mounted from the host
+
+
+2.1.0 / 2019-04-24
+==================
+
+**General**
+* Remove Flask-SocketIO in favor of custom Server Side Events code
+    * Removed the Flask-SocketIO dependency and removed all related code. See **Deployment** section.
+    * Added EventSource polyfill from Yaffle/EventSource
+    * Events are now rate-limited and only availble to authenticated users
+        * This means real time notifications will only appear to authenticated users
+    * Browser localStorage is now used to dictate which tab will maintain the persistent connection to the `/events` endpoint
+        * Thanks to https://gist.github.com/neilj/4146038
+    * Notifications (currently the only use of the events code) now appear with a notification sound
+        * Thanks to [Terrence Martin](https://soundcloud.com/tj-martin-composer) for the sound
+* Added UI to delete and download files from the media library
+* Progress bars have been added to some actions which could take time
+    * To file uploads on challenge page
+    * To file uploads on the page editor page
+    * To the import CTF functionality
+* Challenge file downloads now require a token to download
+    * `/files/<path>` now accepts a `?token=` parameter which is a serialized version of `{user_id: <>, team_id: <>, file_id: <>}`
+    * If any of these sections are invalid or the user/team is banned the download is blocked
+    * This allows files to be downloaded via `curl` or `wget` (i.e. without cookie authentication)
+* Added a team captain concept. Team captains can edit team information such as name, team password, website, etc.
+    * Only captains can change their team's captain
+    * Captains are the first to join the team. But they can be transferred to the true captain later on
+* Cache `/api/v1/scoreboard` and `/api/v1/scoreboard/top/[count]`
+    * Adds `cache.make_cache_key` because Flask-Caching is unable to cleanly determine the endpoint for Flask-Restplus
+    * This helper may change in a future release or be deprecated by an improvement in Flask-Caching
+* Properly load hidden and banned properties in the admin team edit modal
+* Adds a hover color change on table rows in the admin panel.
+    * If a table row specifies the `data-href` attribute it will become clickable
+* Add a simple Makefile to wrap some basic commands
+    * make lint: lint the code base
+    * make test: test the code base
+    * make serve: create a debug application server
+    * make shell: create a Python shell with the application preloaded
+* Started work on a Sphinx documentation site available at [https://docs.ctfd.io](https://docs.ctfd.io)
+
+**Dependencies**
+* Upgraded `SQLAlchemy` to 1.3.3 for proper JSON columns in SQLite
+* Pin `Werkzeug==0.15.2` in requirements.txt
+* Flask-Profiler added to `serve.py --profile`
+
+**Models**
+* Awards table now has a `type` column which is used as a polymorphic identity
+* Add `Teams.captain_id` column to Teams table
+
+**API**
+* Added /api/v1/teams/[team_id]/members
+* Cache `/api/v1/scoreboard` and `/api/v1/scoreboard/top/[count]`
+    * Adds `cache.make_cache_key` because Flask-Caching is unable to cleanly determine the endpoint for Flask-Restplus
+    * This helper may change in a future release or be deprecated by an improvement in Flask-Caching
+* Add `/api/v1/users?notify=true` to email user & password after creating new account
+* Fix issue where admins could not modify their own profile or their own team
+
+**Plugins**
+* `CTFd.utils.security.passwords` deprecated and now available at `CTFd.utils.crypto`
+* Built-in challenge plugins now linkify challenge text properly
+* Challenge type plugins do not have to append `script_root` to file downloads anymore as that will now be managed by the API
+* Awards are now polymorphic and subtables can be created for them
+
+**Themes**
+* Fix spelling mistake in `500.html`
+* Removed `socket.io.min.js` from `base.html`
+* Added EventSource polyfill from Yaffle/EventSource
+* Added `howler.js` to play notification sounds
+* Vendored/duplicated files which were shared between the `admin` and `core` themes have been de-duped
+    * The files used in the `core` theme should now be considered free to use by other themes
+* CTF start and end times are now injected into `base.html` and available in the `CTFd.js` object
+* Register page now properly says "User Name" instead of "Team Name" since only users can see the Register page
+* Users and Teams pages now use a public and private page.
+    * user.html -> users/public.html and users/private.html
+    * team.html -> teams/public.html and teams/private.html
+* Separate `admin/templates/modals/users/create.html` into `admin/templates/modals/users/edit.html`
+
+**Exports**
+* Exports will now properly export JSON for all JSON columns
+    * In some configurations the column would be exported as a string.
+    * Legacy string columns will still be imported properly.
+* Exports from old 2.x CTFd versions should upgrade and be installed properly
+    * Any failure to do so should be considered a bug
+
+**Deployment**
+* User is no longer `root` in Docker image
+    * Errors in writing log files will now fail silently as we expect a future rewrite
+    * Logs will now also go to stdout
+* Update Dockerfile to create and chown/chmod the folders used by `docker-compose` to store files/logs (`/var/log/CTFd`, `/var/uploads`)
+    * This allows the container to write to the folder despite it being a volume mounted from the host
+* Default worker changed back to `gevent`
+* Removed Flask-SocketIO dependency
+    * Removed the `SOCKETIO_ASYNC_MODE` config
+* `gevent` is now required to allow the Server Sent Events client polling code to work
+    * If you use the provided `wsgi.py` or `gevent` gunicorn workers, there shouldn't be any issues
+* Cache `/api/v1/scoreboard` and `/api/v1/scoreboard/top/[count]` which is invalidated on new solves or every minute
+
+**Configuration**
+* Added `SWAGGER_UI` setting to config.py to control the existence of the `/api/v1/` Swagger UI documentation
+* Removed the `SOCKETIO_ASYNC_MODE` config
+* Renamed docstring that referenced `SQLALCHEMY_DATABASE_URI` to `DATABASE_URL`
+* The `REVERSE_PROXY` configuration can be set to `True` or to a comma seperated string of integers (e.g. `1,1,1,1,1`)
+    * See https://werkzeug.palletsprojects.com/en/0.15.x/middleware/proxy_fix/#werkzeug.middleware.proxy_fix.ProxyFix
+    * For example to configure `x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1` specify `1,1,1,1,1`
+
+**Tests**
+* Tests are now executed in parallel
+    * When using a non-memory database, test helpers will now randomize the database name to be able to parallelize execution
+* Test tool switched from `nosetests` to `pytest`
+* Lint tool switched from `pycodestyle` to `flake8`
+* Basic security checking added using `bandit`
+* Allow `create_ctfd()` test helper to take app configuration as an argument
+
+
+2.0.6 / 2019-04-08
+==================
+
+**Security**
+* Fixes an issue where user email addresses could be disclosed to non-admins
+
+**General**
+* Users/Teams set to hidden or banned are no longer visible by other users
+    * This affects the API and the main user interface. This does not affect admins
+* Users without a Team can no longer view challenges when the CTF is in Team Mode
+
 2.0.5 / 2019-03-23
 ==================
 
@@ -160,13 +335,13 @@ If you are upgrading from a prior version be sure to make backups and have a rev
     1. Make all necessary backups. Backup the database, uploads folder, and source code directory.
     2. Upgrade the source code directory (i.e. `git pull`) but do not run any updated code yet.
     3. Set the `DATABASE_URL` in `CTFd/config.py` to point to your existing CTFd database.
-    3. Run the upgrade script from the CTFd root folder i.e. `python migrations/1_2_0_upgrade_2_0_0.py`.
+    4. Run the upgrade script from the CTFd root folder i.e. `python migrations/1_2_0_upgrade_2_0_0.py`.
         * This migration script will attempt to migrate data inside the database to 2.0.0 but it cannot account for every situation.
         * Examples of situations where you may need to manually migrate data:
             * Tables/columns created by plugins
             * Tables/columns created by forks
             * Using databases which are not officially supported (e.g. sqlite, postgres)
-    4. Setup the rest of CTFd (i.e. config.py), migrate/update any plugins, and run normally.
+    5. Setup the rest of CTFd (i.e. config.py), migrate/update any plugins, and run normally.
 * If upgrading from a version before 1.2.0, please upgrade to 1.2.0 and then continue with the steps above.
 
 **General**

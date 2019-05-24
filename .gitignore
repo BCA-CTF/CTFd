@@ -58,6 +58,7 @@ target/
 *.db
 *.log
 .idea/
+.vscode/
 CTFd/static/uploads
 CTFd/uploads
 .data/
@@ -69,3 +70,6 @@ CTFd/uploads
 
 # CTFd Exports
 *.zip
+
+# JS
+node_modules/
